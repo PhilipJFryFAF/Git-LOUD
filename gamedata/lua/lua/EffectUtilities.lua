@@ -134,72 +134,63 @@ end
 
 
 function CreateBuildCubeThread( unitBeingBuilt, builder, OnBeingBuiltEffectsBag )
-
     local bp = GetBlueprint(unitBeingBuilt)
+	
+	-- Get position information.
+	local pos = unitBeingBuilt:GetPosition()
+	local ox = pos[1]
+	local oy = pos[2]
+	local oz = pos[3]
 
 	-- Set up variables for the meshes.
-	local struct = nil
 	local structMesh = bp.Display.BuildMeshBlueprint
-	local flash = nil
-	local flashMesh = bp.Display.MeshBlueprintFlash
-	local ghost = nil
 	local ghostMesh = bp.Display.MeshBlueprintGhost
+	
+	-- Variables to hold the effects.
+	local struct, ghost
+	
+	-- Bring forward the table.insert.
+	local loudInsert = table.insert
 	
 	-- Store uniformScale here so we aren't crawling through the Blueprint every time we refer to this.
 	local uniformScale = bp.Display.UniformScale
     
 	-- Hide the unit being built
-	--unitBeingBuilt:HideBone(0, true)
     unitBeingBuilt:HideLandBones()
     unitBeingBuilt.BeingBuiltShowBoneTriggered = true
 
     local completePerc = GetFractionComplete(unitBeingBuilt)
+	local BeenDestroyed = BeenDestroyed
+	
+	local ghost = unitBeingBuilt:CreateProjectile('/effects/Entities/UEFBuildEffect/UEFBuildEffect_proj.bp')
+	ghost:SetMesh(ghostMesh)
+	ghost:SetScale((1*uniformScale)*1.05, (1*uniformScale)*1.05, (1*uniformScale)*1.05)
+	loudInsert(OnBeingBuiltEffectsBag, ghost)
+	
+	local struct = unitBeingBuilt:CreateProjectile('/effects/Entities/UEFBuildEffect/UEFBuildEffect_proj.bp')
+	LOUDWARP(struct, Vector(ox, (oy * completePerc), oz))
+	struct:SetMesh(structMesh)
+	struct:SetScale((1*uniformScale), (1 * uniformScale), (1*uniformScale))
+	loudInsert(OnBeingBuiltEffectsBag, struct)
 
-    -- Create glow slice cuts and resize base cube
-    while not unitBeingBuilt.Dead and completePerc < 1.0 do
-
-		-- If there's no ghost, make one. This floats a little bigger than our actual structure, but is a guide to the final size.
-		if not ghost then
-			ghost = unitBeingBuilt:CreateProjectile('/effects/Entities/UEFBuildEffect/UEFBuildEffect03_proj.bp')
-			ghost:SetMesh(ghostMesh)
-			ghost:SetScale((1*uniformScale)*1.03,(1*uniformScale)*1.05,(1*uniformScale)*1.03)
-		end
+    while not BeenDestroyed(builder) and not BeenDestroyed(unitBeingBuilt) and completePerc < 1.0 do
+		completePerc = GetFractionComplete(unitBeingBuilt)
 		
-		-- Flash's existence relies onn the projectile lifetime.
-		if not flash then
-			flash = unitBeingBuilt:CreateProjectile('/effects/Entities/UEFBuildEffect/UEFBuildEffect02_proj.bp')
-			flash:SetMesh(flashMesh)
-			flash:SetScale((1*uniformScale)*1.02, ((1*completePerc) * uniformScale)*1.06, (1*uniformScale)*1.02)
-		end
+		struct:SetScale((1*uniformScale), ((1*completePerc) * uniformScale), (1*uniformScale))
 		
-		-- Scale a structure from the floor, based on our completion.
-		if not struct then
-			struct = unitBeingBuilt:CreateProjectile('/effects/Entities/UEFBuildEffect/UEFBuildEffect03_proj.bp')
-			struct:SetMesh(structMesh)
-			struct:SetScale((1*uniformScale), ((1*completePerc) * uniformScale), (1*uniformScale))
-		else
-			struct:SetScale((1*uniformScale), ((1*completePerc) * uniformScale), (1*uniformScale))
-		end
-
         WaitTicks(1)
-		
-        if unitBeingBuilt.Dead then
-            break
-        end
-
-        completePerc = GetFractionComplete(unitBeingBuilt)
     end
-
-	-- Cleanup remaining effects.
-	if struct then
-		struct:Destroy()
+	
+	-- Cleanup function declaration to avoid duplicate code.
+	local cleanup = function(effect)
+		if effect then
+			effect:Destroy()
+		end
 	end
-	if flash then
-		flash:Destroy()
-	end
-	if ghost then
-		ghost:Destroy()
-	end
+	
+	-- Cleanup leftovers.
+	cleanup(ghost)
+	cleanup(struct)
 	
 	-- Show the finished product.
 	unitBeingBuilt:ShowBone(0, true)
@@ -221,7 +212,6 @@ function CreateUEFBuildSliceBeams( builder, unitBeingBuilt, BuildEffectBones, Bu
     local army = builder.Sync.army
 
 	local loudInsert = table.insert
-	local loudRemove = table.remove
 	local loudMin = math.min
 	local loudMax = math.max
 
@@ -235,6 +225,15 @@ function CreateUEFBuildSliceBeams( builder, unitBeingBuilt, BuildEffectBones, Bu
 	
 	-- Create a local to hold our percent completion.
 	local percComplete = unitBeingBuilt:GetFractionComplete()
+	
+	-- Create warpBeams function.
+	local warpBeams = function(x, y, z)
+		if pcall(function()
+			LOUDWARP(BeamEndEntity, Vector(x, y, z))
+		end) then
+			return
+		end
+	end
 	
 	-- Get the smallest/largest/average size values for the structure being built.
 	local smallestSizeX = loudMin(bp.Footprint.SizeX or 1, bp.SizeX or 1, bp.SelectionSizeX or 1, bp.Physics.SkirtSizeX or 1)
@@ -268,16 +267,17 @@ function CreateUEFBuildSliceBeams( builder, unitBeingBuilt, BuildEffectBones, Bu
 	local velocityTable
 	
 	-- Move the beam around, like it's printing or welding.
-    while not BeenDestroyed(builder) and not BeenDestroyed(unitBeingBuilt) do
+    while not BeenDestroyed(builder) and not BeenDestroyed(unitBeingBuilt) and percComplete < 1.0 do
 		-- Check the effect exists.
 		if BeamEndEntity then
 			-- Get our beam's X and Z positioning.
 			beamX = BeamEndEntity:GetPosition().x
 			beamZ = BeamEndEntity:GetPosition().z
-			
-			-- Calculate a new Y position for the beam to warp to, based on completion progress.
 
 			beamOutOfBounds = false
+			
+			-- Modifier for matching both beams' Y position randomness.
+			local mod = GetRandomFloat(0.5, 1.0)
 		
 			-- Catch the beam if it goes out of bounds.
 			if beamX >= (ox + smallestSizeX) or	beamX <= (ox - smallestSizeX) or beamZ >= (oz + smallestSizeZ) or beamZ <= (oz - smallestSizeZ) then
@@ -295,7 +295,7 @@ function CreateUEFBuildSliceBeams( builder, unitBeingBuilt, BuildEffectBones, Bu
 				randZ = GetRandomFloat(-distZ, distZ)
 
 				-- Warp the entity to that position.
-				LOUDWARP(BeamEndEntity, Vector(ox + (randX * uniformScale), oy + (oy * percComplete * uniformScale) * GetRandomFloat(0.5, 1.0), oz + (randZ * uniformScale)))
+				warpBeams(ox + (randX * uniformScale), oy + (oy * percComplete * uniformScale) * mod, oz + (randZ * uniformScale))
 			else
 				-- velocityTable is a table of functions to set the X and Z velocities.
 				velocityTable = velocityTable or {function() velX = -minAvg velZ = 0 end, 
@@ -317,7 +317,7 @@ function CreateUEFBuildSliceBeams( builder, unitBeingBuilt, BuildEffectBones, Bu
 
 				-- When we pass the counter threshold, we raise the beam to be roughly following the structure's completion.
 				if beamCounts > 10 then
-					LOUDWARP(BeamEndEntity, Vector(beamX, oy + (oy * percComplete * uniformScale) * GetRandomFloat(0.5, 1.0), beamZ))
+					warpBeams(beamX, oy + (oy * percComplete * uniformScale) * mod, beamZ)
 					beamCounts = nil
 				end
 			end
@@ -402,7 +402,7 @@ function CreateUEFCommanderBuildSliceBeams( builder, unitBeingBuilt, BuildEffect
 	local velocityTable
 	
 	-- Move the beam around, like it's printing or welding.
-    while not BeenDestroyed(builder) and not BeenDestroyed(unitBeingBuilt) do
+    while not BeenDestroyed(builder) and not BeenDestroyed(unitBeingBuilt) and percComplete < 1.0 do
 		-- Update the percComplete.
 		percComplete = unitBeingBuilt:GetFractionComplete()
 		
