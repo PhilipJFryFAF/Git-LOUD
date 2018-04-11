@@ -27,7 +27,7 @@ ProjectileBlueprint {
         DirectionZRange = 0,
         InitialSpeed = 0,
         InitialSpeedRange = 0,
-        Lifetime = 6,
+        Lifetime = 3,
         MaxSpeed = 0,
         PositionY = 0,
         RotationalVelocity = 0,

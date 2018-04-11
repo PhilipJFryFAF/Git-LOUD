@@ -135,93 +135,74 @@ end
 
 function CreateBuildCubeThread( unitBeingBuilt, builder, OnBeingBuiltEffectsBag )
 
-	local LOUDABS = math.abs
-	
     local bp = GetBlueprint(unitBeingBuilt)
-	local pos = unitBeingBuilt:GetPosition()
-	
-    local xPos = pos[1]
-	local yPos = pos[2]
-	local zPos = pos[3]
-    local proj, slice = nil
-	
-    yPos = yPos + (bp.Physics.MeshExtentsOffsetY or 0)
 
-    local x = bp.Physics.MeshExtentsX or bp.SizeX or (bp.Footprint.SizeX * 1.05) 
-    local z = bp.Physics.MeshExtentsZ or bp.SizeZ or (bp.Footprint.SizeZ * 1.05) 
-    local y = bp.Physics.MeshExtentsY or bp.SizeY or (0.5 + (x + z) * 0.1) 
-
-    local SlicePeriod = 1.5
+	-- Set up variables for the meshes.
+	local struct = nil
+	local structMesh = bp.Display.BuildMeshBlueprint
+	local flash = nil
+	local flashMesh = bp.Display.MeshBlueprintFlash
+	local ghost = nil
+	local ghostMesh = bp.Display.MeshBlueprintGhost
+	
+	-- Store uniformScale here so we aren't crawling through the Blueprint every time we refer to this.
+	local uniformScale = bp.Display.UniformScale
     
-    -- Create a quick glow effect at location where unit is goig to be built
-    proj = unitBeingBuilt:CreateProjectile('/effects/Entities/UEFBuildEffect/UEFBuildEffect02_proj.bp',0,0,0, nil, nil, nil )
-    proj:SetScale(x * 1.05, y * 0.2, z * 1.05)
-    WaitTicks(1)
-	
-    if unitBeingBuilt.Dead then
-        return
-    end
-	
-    local BuildBaseEffect = unitBeingBuilt:CreateProjectile('/effects/Entities/UEFBuildEffect/UEFBuildEffect03_proj.bp', 0, 0, 0, nil, nil, nil )
-	
-	OnBeingBuiltEffectsBag:Add(BuildBaseEffect)
-
-	unitBeingBuilt.Trash:Add(BuildBaseEffect)
-	LOUDWARP( BuildBaseEffect, Vector(xPos, yPos-y, zPos))
-	BuildBaseEffect:SetScale(x, y, z)
-	BuildBaseEffect:SetVelocity(0, 1.4 * y, 0)
-
-    WaitTicks(6)
-	
-    if unitBeingBuilt.Dead then
-        return
-    end
-    
-    if not BuildBaseEffect:BeenDestroyed() then
-        BuildBaseEffect:SetVelocity(0)
-    end
-    
-    unitBeingBuilt:ShowBone(0, true)
+	-- Hide the unit being built
+	--unitBeingBuilt:HideBone(0, true)
     unitBeingBuilt:HideLandBones()
     unitBeingBuilt.BeingBuiltShowBoneTriggered = true
 
-    local lComplete = GetFractionComplete(unitBeingBuilt)
-	
-    WaitTicks(4)
-	
-    if unitBeingBuilt.Dead then
-        return
-    end
-	
-    local cComplete = GetFractionComplete(unitBeingBuilt)
-	local BeenDestroyed = moho.entity_methods.BeenDestroyed
+    local completePerc = GetFractionComplete(unitBeingBuilt)
 
     -- Create glow slice cuts and resize base cube
-    while not unitBeingBuilt.Dead and cComplete < 1.0 do
-	
-        if lComplete < cComplete and not BeenDestroyed(BuildBaseEffect) then
-	        proj = CreateProjectile( BuildBaseEffect, '/effects/Entities/UEFBuildEffect/UEFBuildEffect02_proj.bp',0,y * (1-cComplete),0, nil, nil, nil )
-			
-			OnBeingBuiltEffectsBag:Add(proj)
-			
-            slice = LOUDABS(lComplete - cComplete)
-            proj:SetScale(x, y * slice, z)
-            BuildBaseEffect:SetScale(x, y * (1-cComplete), z)
-        end
+    while not unitBeingBuilt.Dead and completePerc < 1.0 do
+
+		-- If there's no ghost, make one. This floats a little bigger than our actual structure, but is a guide to the final size.
+		if not ghost then
+			ghost = unitBeingBuilt:CreateProjectile('/effects/Entities/UEFBuildEffect/UEFBuildEffect03_proj.bp')
+			ghost:SetMesh(ghostMesh)
+			ghost:SetScale((1*uniformScale)*1.03,(1*uniformScale)*1.05,(1*uniformScale)*1.03)
+		end
 		
-        WaitTicks(SlicePeriod * 10)
+		-- Flash's existence relies onn the projectile lifetime.
+		if not flash then
+			flash = unitBeingBuilt:CreateProjectile('/effects/Entities/UEFBuildEffect/UEFBuildEffect02_proj.bp')
+			flash:SetMesh(flashMesh)
+			flash:SetScale((1*uniformScale)*1.02, ((1*completePerc) * uniformScale)*1.06, (1*uniformScale)*1.02)
+		end
+		
+		-- Scale a structure from the floor, based on our completion.
+		if not struct then
+			struct = unitBeingBuilt:CreateProjectile('/effects/Entities/UEFBuildEffect/UEFBuildEffect03_proj.bp')
+			struct:SetMesh(structMesh)
+			struct:SetScale((1*uniformScale), ((1*completePerc) * uniformScale), (1*uniformScale))
+		else
+			struct:SetScale((1*uniformScale), ((1*completePerc) * uniformScale), (1*uniformScale))
+		end
+
+        WaitTicks(1)
 		
         if unitBeingBuilt.Dead then
             break
         end
-		
-        lComplete = cComplete
-        cComplete = GetFractionComplete(unitBeingBuilt)
+
+        completePerc = GetFractionComplete(unitBeingBuilt)
     end
-	
-	if not BeenDestroyed(BuildBaseEffect) then
-		BuildBaseEffect:Destroy()
+
+	-- Cleanup remaining effects.
+	if struct then
+		struct:Destroy()
 	end
+	if flash then
+		flash:Destroy()
+	end
+	if ghost then
+		ghost:Destroy()
+	end
+	
+	-- Show the finished product.
+	unitBeingBuilt:ShowBone(0, true)
 end
 
 function CreateUEFUnitBeingBuiltEffects( builder, unitBeingBuilt, BuildEffectsBag )
@@ -230,169 +211,252 @@ function CreateUEFUnitBeingBuiltEffects( builder, unitBeingBuilt, BuildEffectsBa
 end
 
 function CreateUEFBuildSliceBeams( builder, unitBeingBuilt, BuildEffectBones, BuildEffectsBag )
+	local BeamBuildEmtBp = '/effects/emitters/build_beam_01_emit.bp'
+	local bp = GetBlueprint(unitBeingBuilt)
+	local pos = unitBeingBuilt:GetPosition()
+	local ox = pos[1]
+	local oy = pos[2]
+	local oz = pos[3]
 
     local army = builder.Sync.army
-    local BeamBuildEmtBp = '/effects/emitters/build_beam_01_emit.bp'
-    local buildbp = GetBlueprint(unitBeingBuilt)
-	local pos = unitBeingBuilt:GetPosition()
-	local x = pos[1]
-	local y = pos[2]
-	local z = pos[3]
-    y = y + (buildbp.Physics.MeshExtentsOffsetY or 0)    
 
-    -- Create a projectile for the end of build effect and WARP it to the unit
-    local BeamEndEntity = unitBeingBuilt:CreateProjectile('/effects/entities/UEFBuild/UEFBuild01_proj.bp',0,0,0,nil,nil,nil)
+	local loudInsert = table.insert
+	local loudRemove = table.remove
+	local loudMin = math.min
+	local loudMax = math.max
+
+	local GetRandomFloat = GetRandomFloat
+	local GetRandomInt = GetRandomInt
+
+	local BeamEndEntity
+	local EffectsBag = {}
 	
-    BuildEffectsBag:Add( BeamEndEntity )
+	-- Store uniformScale here so we aren't crawling through the Blueprint every time we refer to this.
+	local uniformScale = bp.Display.UniformScale
+	
+	-- Get the smallest/largest/average size values for the structure being built.
+	local smallestSizeX = loudMin(bp.Footprint.SizeX or 1, bp.SizeX or 1, bp.SelectionSizeX or 1, bp.Physics.SkirtSizeX or 1)
+	local largestSizeX = loudMax(bp.Footprint.SizeX or 3, bp.SizeX or 3, bp.SelectionSizeX or 3, bp.Physics.SkirtSizeX or 3)
+	local smallestSizeZ = loudMin(bp.Footprint.SizeZ or 2, bp.SizeZ or 2, bp.SelectionSizeZ or 2, bp.Physics.SkirtSizeZ or 1)
+	local largestSizeZ = loudMax(bp.Footprint.SizeZ or 3, bp.SizeZ or 3, bp.SelectionSizeZ or 3, bp.Physics.SkirtSizeZ or 3)
+	local minAvg = loudMin(((largestSizeX + largestSizeZ) / 2),((smallestSizeX + smallestSizeZ) / 2))
 
-    -- Create build beams
-    if BuildEffectBones != nil then
-        local beamEffect = nil
-        for i, BuildBone in BuildEffectBones do
-            BuildEffectsBag:Add( LOUDATTACHBEAMENTITY( builder, BuildBone, BeamEndEntity, -1, army, BeamBuildEmtBp ) )
-            BuildEffectsBag:Add( LOUDATTACHEMITTER( builder, BuildBone, army, '/effects/emitters/flashing_blue_glow_01_emit.bp' ) )             
-        end
-    end
+	-- Grab BuildEffectsBag
+	EffectsBag = BuildEffectsBag
+	
+	-- Create build beam entity
+	BeamEndEntity = unitBeingBuilt:CreateProjectile('/effects/entities/UEFBuild/UEFBuild01_proj.bp',0,0,0,nil,nil,nil)
+	loudInsert(EffectsBag, BeamEndEntity)
+	LOUDWARP(BeamEndEntity, Vector(ox, oy, oz))
+	
+	-- Create build beams
+	if BuildEffectBones != nil then
+		for i, BuildBone in BuildEffectBones do
+			local beamEffect = LOUDATTACHBEAMENTITY(builder, BuildBone, BeamEndEntity, -1, army, BeamBuildEmtBp )
+			loudInsert(EffectsBag, beamEffect)
+		end
+	end
+	
+	LOUDEMITONENTITY( BeamEndEntity, builder.Sync.army, '/effects/emitters/sparks_08_emit.bp')
+	
+	local beamX, beamZ, velX, velZ, randX, randZ, distX, distZ
+	local beamCounts = nil
 
-    -- Determine beam positioning on build cube, this should match sizes of CreateBuildCubeThread
-    local mul = 1.05
-    local ox = buildbp.SizeX or buildbp.Physics.MeshExtentsX or (buildbp.Footprint.SizeX * mul) 
-    local oz = buildbp.SizeZ or buildbp.Physics.MeshExtentsZ or (buildbp.Footprint.SizeZ * mul) 
-    local oy = buildbp.SizeY or buildbp.Physics.MeshExtentsY or ((0.5 + (ox + oz) * 0.1))
-
-    ox = ox * 0.5
-    oz = oz * 0.5
-
-    -- Determine the the 2 closest edges of the build cube and use those for the location of laser
-    local VectorExtentsList = { Vector(x + ox, y + oy, z + oz), Vector(x + ox, y + oy, z - oz), Vector(x - ox, y + oy, z + oz), Vector(x - ox, y + oy, z - oz) }
-    local endVec1 = GetClosestVector(builder:GetPosition(), VectorExtentsList )
-
-    for k,v in VectorExtentsList do
-        if(v == endVec1) then
-            LOUDREMOVE(VectorExtentsList, k)
-        end
-    end
-
-    local endVec2 = GetClosestVector(builder:GetPosition(), VectorExtentsList )
-    local cx1 = endVec1[1]
-	local cy1 = endVec1[2]
-	local cz1 = endVec1[3]
-    local cx2 = endVec2[1]
-	local cy2 = endVec2[2]
-	local cz2 = endVec2[3]
-
-    #-- Determine a the velocity of our projectile, used for the scanning effect
-    local velX = 2 * (endVec2.x - endVec1.x)
-    local velY = 2 * (endVec2.y - endVec1.y)
-    local velZ = 2 * (endVec2.z - endVec1.z)
-
-    if unitBeingBuilt:GetFractionComplete() == 0 then
-        LOUDWARP( BeamEndEntity, Vector( (cx1 + cx2) * 0.5, ((cy1 + cy2) * 0.5) - oy, (cz1 + cz2) * 0.5 ) ) 
-        WaitTicks(8)   
-    end 
-
-    local flipDirection = true
-
-    #-- WARP our projectile back to the initial corner and lower based on build completeness
+	-- beamOutOfBounds is used to control if we adjust Velocity or not depending on where the beam is.
+	local beamOutOfBounds = false
+	
+	-- Used to store our available velocity choices.
+	local velocityTable
+	
+	-- Move the beam around, like it's printing or welding.
     while not BeenDestroyed(builder) and not BeenDestroyed(unitBeingBuilt) do
-        if flipDirection then
-            LOUDWARP( BeamEndEntity, Vector( cx1, (cy1 - (oy * unitBeingBuilt:GetFractionComplete())), cz1 ) )
-            BeamEndEntity:SetVelocity( velX, velY, velZ )
-            flipDirection = false
-        else
-            LOUDWARP( BeamEndEntity, Vector( cx2, (cy2 - (oy * unitBeingBuilt:GetFractionComplete())), cz2 ) )
-            BeamEndEntity:SetVelocity( -velX, -velY, -velZ )
-            flipDirection = true
-        end
+		-- Check the effect exists.
+		if BeamEndEntity then
+			-- Get our beam's X and Z positioning.
+			beamX = BeamEndEntity:GetPosition().x
+			beamZ = BeamEndEntity:GetPosition().z
+			
+			-- Calculate a new Y position for the beam to warp to, based on completion progress.
+
+			beamOutOfBounds = false
 		
-        WaitTicks(8)
+			-- Catch the beam if it goes out of bounds.
+			if beamX >= (ox + smallestSizeX) or	beamX <= (ox - smallestSizeX) or beamZ >= (oz + smallestSizeZ) or beamZ <= (oz - smallestSizeZ) then
+				beamOutOfBounds = true
+			end
+
+			-- Check beamOutOfBounds to determine what to do next.
+			if beamOutOfBounds then
+				-- Get the distance from the origin point to the unit's size boundary.
+				distX = ox - (ox + largestSizeX)
+				distZ = oz - (oz + largestSizeZ)
+				
+				-- Get a random position within the distances.
+				randX = GetRandomFloat(-distX, distX)
+				randZ = GetRandomFloat(-distZ, distZ)
+
+				-- Warp the entity to that position.
+				LOUDWARP(BeamEndEntity, Vector(ox + (randX * uniformScale), oy + (oy * unitBeingBuilt:GetFractionComplete() * uniformScale) * GetRandomFloat(0.5, 1.0), oz + (randZ * uniformScale)))
+			else
+				-- velocityTable is a table of functions to set the X and Z velocities.
+				velocityTable = velocityTable or {function() velX = -minAvg velZ = 0 end, 
+													function() velX = minAvg velZ = 0 end,
+													function() velZ = -minAvg velX = 0 end,
+													function() velZ = minAvg velX = 0 end,}
+				-- Randomly select from the table.
+				velocityTable[GetRandomInt(1,4)]()
+
+				-- Set the beam's velocity to our new values.
+				BeamEndEntity:SetVelocity(velX, 0, velZ)
+				
+				-- beamStops keeps track of the number of times the beam has changed its velocity.
+				if beamCounts then
+					beamCounts = beamCounts + 1
+				else
+					beamCounts = 1
+				end
+
+				-- When we pass the counter threshold, we raise the beam to be roughly following the structure's completion.
+				if beamCounts > 10 then
+					LOUDWARP(BeamEndEntity, Vector(beamX, oy + (oy * unitBeingBuilt:GetFractionComplete() * uniformScale) * GetRandomFloat(0.5, 1.0), beamZ))
+					beamCounts = nil
+				end
+			end
+		end
+		WaitTicks(1)
     end
 end
 
 function CreateUEFCommanderBuildSliceBeams( builder, unitBeingBuilt, BuildEffectBones, BuildEffectsBag )
+	local BeamBuildEmtBp = '/effects/emitters/build_beam_01_emit.bp'
+	local bp = GetBlueprint(unitBeingBuilt)
+	local pos = unitBeingBuilt:GetPosition()
+	local ox = pos[1]
+	local oy = pos[2]
+	local oz = pos[3]
 
     local army = builder.Sync.army
-    local BeamBuildEmtBp = '/effects/emitters/build_beam_01_emit.bp'
-    local buildbp = GetBlueprint(unitBeingBuilt)
-	local pos = unitBeingBuilt:GetPosition()
-	local x = pos[1]
-	local y = pos[2]
-	local z = pos[3]
-    y = y + (buildbp.Physics.MeshExtentsOffsetY or 0)    
 
-    -- Create a projectile for the end of build effect and WARP it to the unit
-    local BeamEndEntity = unitBeingBuilt:CreateProjectile('/effects/entities/UEFBuild/UEFBuild01_proj.bp',0,0,0,nil,nil,nil)
-    local BeamEndEntity2 = unitBeingBuilt:CreateProjectile('/effects/entities/UEFBuild/UEFBuild01_proj.bp',0,0,0,nil,nil,nil)
-    BuildEffectsBag:Add( BeamEndEntity )
-    BuildEffectsBag:Add( BeamEndEntity2 )
-    
+	local loudInsert = table.insert
+	local loudRemove = table.remove
+	local loudMin = math.min
+	local loudMax = math.max
+
+	local GetRandomFloat = GetRandomFloat
+	local GetRandomInt = GetRandomInt
+
+	local BeamEndEntity
+	local EffectsBag = {}
+	
+	-- Store uniformScale here so we aren't crawling through the Blueprint every time we refer to this.
+	local uniformScale = bp.Display.UniformScale
+	
+	-- Get the smallest/largest/average size values for the structure being built.
+	local smallestSizeX = loudMin(bp.Footprint.SizeX or 1, bp.SizeX or 1, bp.SelectionSizeX or 1, bp.Physics.SkirtSizeX or 1)
+	local largestSizeX = loudMax(bp.Footprint.SizeX or 3, bp.SizeX or 3, bp.SelectionSizeX or 3, bp.Physics.SkirtSizeX or 3)
+	local smallestSizeZ = loudMin(bp.Footprint.SizeZ or 2, bp.SizeZ or 2, bp.SelectionSizeZ or 2, bp.Physics.SkirtSizeZ or 1)
+	local largestSizeZ = loudMax(bp.Footprint.SizeZ or 3, bp.SizeZ or 3, bp.SelectionSizeZ or 3, bp.Physics.SkirtSizeZ or 3)
+	local minAvg = loudMin(((largestSizeX + largestSizeZ) / 2),((smallestSizeX + smallestSizeZ) / 2))
+
+	-- Grab BuildEffectsBag
+	EffectsBag = BuildEffectsBag
+	
+	-- Create build beam entity
+	BeamEndEntity = unitBeingBuilt:CreateProjectile('/effects/entities/UEFBuild/UEFBuild01_proj.bp',0,0,0,nil,nil,nil)
+	BeamEndEntity2 = unitBeingBuilt:CreateProjectile('/effects/entities/UEFBuild/UEFBuild01_proj.bp',0,0,0,nil,nil,nil)
+	loudInsert(EffectsBag, BeamEndEntity)
+	loudInsert(EffectsBag, BeamEndEntity2)
+	LOUDWARP(BeamEndEntity, Vector(ox, oy, oz))
+	LOUDWARP(BeamEndEntity2, Vector(ox, oy, oz))
+	
     -- Create build beams
     if BuildEffectBones != nil then
-        local beamEffect = nil
         for i, BuildBone in BuildEffectBones do
-            BuildEffectsBag:Add( LOUDATTACHBEAMENTITY( builder, BuildBone, BeamEndEntity, -1, army, BeamBuildEmtBp ) )
-            BuildEffectsBag:Add( LOUDATTACHBEAMENTITY( builder, BuildBone, BeamEndEntity2, -1, army, BeamBuildEmtBp ) )
-            BuildEffectsBag:Add( LOUDATTACHEMITTER( builder, BuildBone, army, '/effects/emitters/flashing_blue_glow_01_emit.bp' ) )                                    
+            local beamEffect = LOUDATTACHBEAMENTITY(builder, BuildBone, BeamEndEntity, -1, army, BeamBuildEmtBp)
+			local beamEffect2 = LOUDATTACHBEAMENTITY(builder, BuildBone, BeamEndEntity2, -1, army, BeamBuildEmtBp)
+			local glow = LOUDATTACHEMITTER(builder, BuildBone, army, '/effects/emitters/flashing_blue_glow_01_emit.bp')
+            loudInsert(EffectsBag, beamEffect)
+			loudInsert(EffectsBag, beamEffect2)
+			loudInsert(EffectsBag, glow)
         end
-    end
-
-    -- Determine beam positioning on build cube, this should match sizes of CreateBuildCubeThread
-    local mul = 1.05
-    local ox = buildbp.SizeX or buildbp.Physics.MeshExtentsX or (buildbp.Footprint.SizeX * mul)
-    local oz = buildbp.SizeZ or buildbp.Physics.MeshExtentsZ or (buildbp.Footprint.SizeZ * mul)
-    local oy = buildbp.SizeY or buildbp.Physics.MeshExtentsY or ((0.5 + (ox + oz) * 0.1))
-
-    ox = ox * 0.5
-    oz = oz * 0.5
-
-    -- Determine the the 2 closest edges of the build cube and use those for the location of our laser
-    local VectorExtentsList = { Vector(x + ox, y + oy, z + oz), Vector(x + ox, y + oy, z - oz), Vector(x - ox, y + oy, z + oz), Vector(x - ox, y + oy, z - oz) }
-    local endVec1 = GetClosestVector(builder:GetPosition(), VectorExtentsList )
-
-    for k,v in VectorExtentsList do
-        if(v == endVec1) then
-            LOUDREMOVE(VectorExtentsList, k)
-        end
-    end
-
-    local endVec2 = GetClosestVector(builder:GetPosition(), VectorExtentsList )
-    local cx1 = endVec1[1]
-	local cy1 = endVec1[2]
-	local cz1 = endVec1[3]
-    local cx2 = endVec2[1]
-	local cy2 = endVec2[2]
-	local cz2 = endVec2[3]
-
-    -- Determine a the velocity of our projectile, used for the scaning effect
-    local velX = 2 * (endVec2.x - endVec1.x)
-    local velY = 2 * (endVec2.y - endVec1.y)
-    local velZ = 2 * (endVec2.z - endVec1.z)
-
-    if GetFractionComplete(unitBeingBuilt) == 0 then
-        LOUDWARP( BeamEndEntity, Vector( cx1, cy1 - oy, cz1 ) ) 
-        LOUDWARP( BeamEndEntity2, Vector( cx2, cy2 - oy, cz2 ) )
-        WaitTicks(8)   
     end    
 
-    local flipDirection = true
+    LOUDEMITONENTITY(BeamEndEntity, builder.Sync.army, '/effects/emitters/sparks_08_emit.bp')
+	LOUDEMITONENTITY(BeamEndEntity2, builder.Sync.army, '/effects/emitters/sparks_08_emit.bp')
+	
+	local beamX, beamZ, beam2X, beam2Z, velX, velZ, randX, randZ, distX, distZ
+	local beamCounts = nil
 
-    -- WARP our projectile back to the initial corner and lower based on build completeness
+	-- beamOutOfBounds is used to control if we adjust Velocity or not depending on where the beam is.
+	local beamOutOfBounds = false
+	
+	-- Used to store our available velocity choices.
+	local velocityTable
+	
+	-- Move the beam around, like it's printing or welding.
     while not BeenDestroyed(builder) and not BeenDestroyed(unitBeingBuilt) do
-        if flipDirection then
-            LOUDWARP( BeamEndEntity, Vector( cx1, (cy1 - (oy * unitBeingBuilt:GetFractionComplete())), cz1 ) )
-            BeamEndEntity:SetVelocity( velX, velY, velZ )
-            LOUDWARP( BeamEndEntity2, Vector( cx2, (cy2 - (oy * unitBeingBuilt:GetFractionComplete())), cz2 ) )
-            BeamEndEntity2:SetVelocity( -velX, -velY, -velZ )
-            flipDirection = false
-        else
-            LOUDWARP( BeamEndEntity, Vector( cx2, (cy2 - (oy * unitBeingBuilt:GetFractionComplete())), cz2 ) )
-            BeamEndEntity:SetVelocity( -velX, -velY, -velZ )
-            LOUDWARP( BeamEndEntity2, Vector( cx1, (cy1 - (oy * unitBeingBuilt:GetFractionComplete())), cz1 ) )
-            BeamEndEntity2:SetVelocity( velX, velY, velZ )            
-            flipDirection = true
-        end
+		-- Check the effect exists.
+		if BeamEndEntity then
+			-- Get our beam's X and Z positioning.
+			beamX = BeamEndEntity:GetPosition().x
+			beamZ = BeamEndEntity:GetPosition().z
+			beam2X = BeamEndEntity2:GetPosition().x
+			beam2Z = BeamEndEntity2:GetPosition().z
+
+			beamOutOfBounds = false
 		
-        WaitTicks(8)
+			-- Catch the beam if it goes out of bounds.
+			if beamX >= (ox + smallestSizeX) or beamX <= (ox - smallestSizeX) or beamZ >= (oz + smallestSizeZ) or beamZ <= (oz - smallestSizeZ) or
+			beam2X >= (ox + smallestSizeX) or beam2X <= (ox - smallestSizeX) or beam2Z >= (oz + smallestSizeZ) or beam2Z <= (oz - smallestSizeZ) then
+				beamOutOfBounds = true
+			end
+
+			-- Check beamOutOfBounds to determine what to do next.
+			if beamOutOfBounds then
+				-- Get the distance from the origin point to the unit's size boundary.
+				distX = ox - (ox + largestSizeX)
+				distZ = oz - (oz + largestSizeZ)
+				
+				-- Get a random position within the distances.
+				randX = GetRandomFloat(-distX, distX)
+				randZ = GetRandomFloat(-distZ, distZ)
+				
+				-- Modifier for matching both beams' Y position randomness.
+				local mod = GetRandomFloat(0.5, 1.0)
+
+				-- Warp the entity to that position.
+				LOUDWARP(BeamEndEntity, Vector(ox + (randX * uniformScale), oy + (oy * unitBeingBuilt:GetFractionComplete() * uniformScale) * mod, oz + (randZ * uniformScale)))
+				LOUDWARP(BeamEndEntity2, Vector(ox + (randX * uniformScale), oy + (oy * unitBeingBuilt:GetFractionComplete() * uniformScale) * mod, oz + (randZ * uniformScale)))
+			else
+				-- velocityTable is a table of functions to set the X and Z velocities.
+				velocityTable = velocityTable or {function() velX = -minAvg velZ = 0 end, 
+													function() velX = minAvg velZ = 0 end,
+													function() velZ = -minAvg velX = 0 end,
+													function() velZ = minAvg velX = 0 end,}
+				-- Randomly select from the table.
+				velocityTable[GetRandomInt(1,4)]()
+
+				-- Set the beam's velocity to our new values.
+				BeamEndEntity:SetVelocity(velX, 0, velZ)
+				BeamEndEntity2:SetVelocity(-velX, 0, -velZ)
+				
+				-- beamStops keeps track of the number of times the beam has changed its velocity.
+				if beamCounts then
+					beamCounts = beamCounts + 1
+				else
+					beamCounts = 1
+				end
+
+				-- When we pass the counter threshold, we raise the beam to be roughly following the structure's completion.
+				if beamCounts > 10 then
+					local mod = GetRandomFloat(0.5, 1.0)
+					LOUDWARP(BeamEndEntity, Vector(beamX, oy + (oy * unitBeingBuilt:GetFractionComplete() * uniformScale) * mod, beamZ))
+					LOUDWARP(BeamEndEntity2, Vector(beam2X, oy + (oy * unitBeingBuilt:GetFractionComplete() * uniformScale) * mod, beam2Z))
+					beamCounts = nil
+				end
+			end
+		end
+		WaitTicks(1)
     end
 end
 

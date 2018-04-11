@@ -253,6 +253,38 @@ function ExtractBuildMeshBlueprint(bp)
 	end
 end
 
+function ExtractGhostMeshBlueprint(bp)
+	local newGhostMesh = nil
+	local newFlashMesh = nil
+
+	local meshID = bp.Display.MeshBlueprint
+	if meshID then
+		local meshBP = original_blueprints.Mesh[meshID]
+		if meshBP then
+			newGhostMesh = table.deepcopy(meshBP)
+			newFlashMesh = table.deepcopy(meshBP)
+			if newGhostMesh.LODs then
+				for i, lod in newGhostMesh.LODs do
+					lod.ShaderName = 'ShieldUEF'
+					--lod.AlbedoName = '/meshes/generic/cube03_albedo.dds'
+				end
+			end
+			if newFlashMesh.LODs then
+				for i, lod in newFlashMesh.LODs do
+					lod.ShaderName = 'AlphaFade'
+					lod.AlbedoName = '/meshes/generic/cube02_albedo.dds'
+				end
+			end
+			newGhostMesh.BlueprintId = meshID..'_ghost'
+			newFlashMesh.BlueprintId = meshID..'_flash'
+			bp.Display.MeshBlueprintGhost = newGhostMesh.BlueprintId
+			bp.Display.MeshBlueprintFlash = newFlashMesh.BlueprintId
+			MeshBlueprint(newGhostMesh)
+			MeshBlueprint(newFlashMesh)
+		end
+	end
+end
+
 function ExtractCloakMeshBlueprint(bp)
 
 	local meshid = bp.Display.MeshBlueprint
@@ -425,6 +457,9 @@ function ExtractAllMeshBlueprints()
         ExtractBuildMeshBlueprint(bp)
 		ExtractCloakMeshBlueprint(bp)
 		ExtractPhaseMeshBlueprint(bp)
+		if bp.General.FactionName == 'UEF' then
+			ExtractGhostMeshBlueprint(bp)
+		end
     end
 
     for id,bp in original_blueprints.Prop do
