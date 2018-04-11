@@ -228,11 +228,13 @@ function CreateUEFBuildSliceBeams( builder, unitBeingBuilt, BuildEffectBones, Bu
 	local GetRandomFloat = GetRandomFloat
 	local GetRandomInt = GetRandomInt
 
-	local BeamEndEntity
-	local EffectsBag = {}
+	local BeamEndEntity = Entity()
 	
 	-- Store uniformScale here so we aren't crawling through the Blueprint every time we refer to this.
 	local uniformScale = bp.Display.UniformScale
+	
+	-- Create a local to hold our percent completion.
+	local percComplete = unitBeingBuilt:GetFractionComplete()
 	
 	-- Get the smallest/largest/average size values for the structure being built.
 	local smallestSizeX = loudMin(bp.Footprint.SizeX or 1, bp.SizeX or 1, bp.SelectionSizeX or 1, bp.Physics.SkirtSizeX or 1)
@@ -241,19 +243,16 @@ function CreateUEFBuildSliceBeams( builder, unitBeingBuilt, BuildEffectBones, Bu
 	local largestSizeZ = loudMax(bp.Footprint.SizeZ or 3, bp.SizeZ or 3, bp.SelectionSizeZ or 3, bp.Physics.SkirtSizeZ or 3)
 	local minAvg = loudMin(((largestSizeX + largestSizeZ) / 2),((smallestSizeX + smallestSizeZ) / 2))
 
-	-- Grab BuildEffectsBag
-	EffectsBag = BuildEffectsBag
-	
 	-- Create build beam entity
 	BeamEndEntity = unitBeingBuilt:CreateProjectile('/effects/entities/UEFBuild/UEFBuild01_proj.bp',0,0,0,nil,nil,nil)
-	loudInsert(EffectsBag, BeamEndEntity)
+	loudInsert(BuildEffectsBag, BeamEndEntity)
 	LOUDWARP(BeamEndEntity, Vector(ox, oy, oz))
 	
 	-- Create build beams
 	if BuildEffectBones != nil then
 		for i, BuildBone in BuildEffectBones do
 			local beamEffect = LOUDATTACHBEAMENTITY(builder, BuildBone, BeamEndEntity, -1, army, BeamBuildEmtBp )
-			loudInsert(EffectsBag, beamEffect)
+			loudInsert(BuildEffectsBag, beamEffect)
 		end
 	end
 	
@@ -296,7 +295,7 @@ function CreateUEFBuildSliceBeams( builder, unitBeingBuilt, BuildEffectBones, Bu
 				randZ = GetRandomFloat(-distZ, distZ)
 
 				-- Warp the entity to that position.
-				LOUDWARP(BeamEndEntity, Vector(ox + (randX * uniformScale), oy + (oy * unitBeingBuilt:GetFractionComplete() * uniformScale) * GetRandomFloat(0.5, 1.0), oz + (randZ * uniformScale)))
+				LOUDWARP(BeamEndEntity, Vector(ox + (randX * uniformScale), oy + (oy * percComplete * uniformScale) * GetRandomFloat(0.5, 1.0), oz + (randZ * uniformScale)))
 			else
 				-- velocityTable is a table of functions to set the X and Z velocities.
 				velocityTable = velocityTable or {function() velX = -minAvg velZ = 0 end, 
@@ -318,7 +317,7 @@ function CreateUEFBuildSliceBeams( builder, unitBeingBuilt, BuildEffectBones, Bu
 
 				-- When we pass the counter threshold, we raise the beam to be roughly following the structure's completion.
 				if beamCounts > 10 then
-					LOUDWARP(BeamEndEntity, Vector(beamX, oy + (oy * unitBeingBuilt:GetFractionComplete() * uniformScale) * GetRandomFloat(0.5, 1.0), beamZ))
+					LOUDWARP(BeamEndEntity, Vector(beamX, oy + (oy * percComplete * uniformScale) * GetRandomFloat(0.5, 1.0), beamZ))
 					beamCounts = nil
 				end
 			end
@@ -345,11 +344,14 @@ function CreateUEFCommanderBuildSliceBeams( builder, unitBeingBuilt, BuildEffect
 	local GetRandomFloat = GetRandomFloat
 	local GetRandomInt = GetRandomInt
 
-	local BeamEndEntity
-	local EffectsBag = {}
-	
+	local BeamEndEntity = Entity()
+	local BeamEndEntity2 = Entity()
+
 	-- Store uniformScale here so we aren't crawling through the Blueprint every time we refer to this.
 	local uniformScale = bp.Display.UniformScale
+	
+	-- Create a local to hold our percent completion.
+	local percComplete = unitBeingBuilt:GetFractionComplete()
 	
 	-- Get the smallest/largest/average size values for the structure being built.
 	local smallestSizeX = loudMin(bp.Footprint.SizeX or 1, bp.SizeX or 1, bp.SelectionSizeX or 1, bp.Physics.SkirtSizeX or 1)
@@ -357,17 +359,23 @@ function CreateUEFCommanderBuildSliceBeams( builder, unitBeingBuilt, BuildEffect
 	local smallestSizeZ = loudMin(bp.Footprint.SizeZ or 2, bp.SizeZ or 2, bp.SelectionSizeZ or 2, bp.Physics.SkirtSizeZ or 1)
 	local largestSizeZ = loudMax(bp.Footprint.SizeZ or 3, bp.SizeZ or 3, bp.SelectionSizeZ or 3, bp.Physics.SkirtSizeZ or 3)
 	local minAvg = loudMin(((largestSizeX + largestSizeZ) / 2),((smallestSizeX + smallestSizeZ) / 2))
-
-	-- Grab BuildEffectsBag
-	EffectsBag = BuildEffectsBag
+	
+	-- Create warpBeams function.
+	local warpBeams = function(x, y, z)
+		if pcall(function()
+			LOUDWARP(BeamEndEntity, Vector(x, y, z))
+			LOUDWARP(BeamEndEntity2, Vector(x, y, z))
+		end) then
+			return
+		end
+	end
 	
 	-- Create build beam entity
 	BeamEndEntity = unitBeingBuilt:CreateProjectile('/effects/entities/UEFBuild/UEFBuild01_proj.bp',0,0,0,nil,nil,nil)
 	BeamEndEntity2 = unitBeingBuilt:CreateProjectile('/effects/entities/UEFBuild/UEFBuild01_proj.bp',0,0,0,nil,nil,nil)
-	loudInsert(EffectsBag, BeamEndEntity)
-	loudInsert(EffectsBag, BeamEndEntity2)
-	LOUDWARP(BeamEndEntity, Vector(ox, oy, oz))
-	LOUDWARP(BeamEndEntity2, Vector(ox, oy, oz))
+	loudInsert(BuildEffectsBag, BeamEndEntity)
+	loudInsert(BuildEffectsBag, BeamEndEntity2)
+	warpBeams(ox, oy, oz)
 	
     -- Create build beams
     if BuildEffectBones != nil then
@@ -375,15 +383,15 @@ function CreateUEFCommanderBuildSliceBeams( builder, unitBeingBuilt, BuildEffect
             local beamEffect = LOUDATTACHBEAMENTITY(builder, BuildBone, BeamEndEntity, -1, army, BeamBuildEmtBp)
 			local beamEffect2 = LOUDATTACHBEAMENTITY(builder, BuildBone, BeamEndEntity2, -1, army, BeamBuildEmtBp)
 			local glow = LOUDATTACHEMITTER(builder, BuildBone, army, '/effects/emitters/flashing_blue_glow_01_emit.bp')
-            loudInsert(EffectsBag, beamEffect)
-			loudInsert(EffectsBag, beamEffect2)
-			loudInsert(EffectsBag, glow)
+            loudInsert(BuildEffectsBag, beamEffect)
+			loudInsert(BuildEffectsBag, beamEffect2)
+			loudInsert(BuildEffectsBag, glow)
         end
     end    
 
     LOUDEMITONENTITY(BeamEndEntity, builder.Sync.army, '/effects/emitters/sparks_08_emit.bp')
 	LOUDEMITONENTITY(BeamEndEntity2, builder.Sync.army, '/effects/emitters/sparks_08_emit.bp')
-	
+
 	local beamX, beamZ, beam2X, beam2Z, velX, velZ, randX, randZ, distX, distZ
 	local beamCounts = nil
 
@@ -395,6 +403,9 @@ function CreateUEFCommanderBuildSliceBeams( builder, unitBeingBuilt, BuildEffect
 	
 	-- Move the beam around, like it's printing or welding.
     while not BeenDestroyed(builder) and not BeenDestroyed(unitBeingBuilt) do
+		-- Update the percComplete.
+		percComplete = unitBeingBuilt:GetFractionComplete()
+		
 		-- Check the effect exists.
 		if BeamEndEntity then
 			-- Get our beam's X and Z positioning.
@@ -404,6 +415,9 @@ function CreateUEFCommanderBuildSliceBeams( builder, unitBeingBuilt, BuildEffect
 			beam2Z = BeamEndEntity2:GetPosition().z
 
 			beamOutOfBounds = false
+			
+			-- Modifier for matching both beams' Y position randomness.
+			local mod = GetRandomFloat(0.5, 1.0)
 		
 			-- Catch the beam if it goes out of bounds.
 			if beamX >= (ox + smallestSizeX) or beamX <= (ox - smallestSizeX) or beamZ >= (oz + smallestSizeZ) or beamZ <= (oz - smallestSizeZ) or
@@ -420,13 +434,9 @@ function CreateUEFCommanderBuildSliceBeams( builder, unitBeingBuilt, BuildEffect
 				-- Get a random position within the distances.
 				randX = GetRandomFloat(-distX, distX)
 				randZ = GetRandomFloat(-distZ, distZ)
-				
-				-- Modifier for matching both beams' Y position randomness.
-				local mod = GetRandomFloat(0.5, 1.0)
 
 				-- Warp the entity to that position.
-				LOUDWARP(BeamEndEntity, Vector(ox + (randX * uniformScale), oy + (oy * unitBeingBuilt:GetFractionComplete() * uniformScale) * mod, oz + (randZ * uniformScale)))
-				LOUDWARP(BeamEndEntity2, Vector(ox + (randX * uniformScale), oy + (oy * unitBeingBuilt:GetFractionComplete() * uniformScale) * mod, oz + (randZ * uniformScale)))
+				warpBeams(ox + (randX * uniformScale), oy + (oy * percComplete * uniformScale) * mod, oz + (randZ * uniformScale))
 			else
 				-- velocityTable is a table of functions to set the X and Z velocities.
 				velocityTable = velocityTable or {function() velX = -minAvg velZ = 0 end, 
@@ -449,9 +459,7 @@ function CreateUEFCommanderBuildSliceBeams( builder, unitBeingBuilt, BuildEffect
 
 				-- When we pass the counter threshold, we raise the beam to be roughly following the structure's completion.
 				if beamCounts > 10 then
-					local mod = GetRandomFloat(0.5, 1.0)
-					LOUDWARP(BeamEndEntity, Vector(beamX, oy + (oy * unitBeingBuilt:GetFractionComplete() * uniformScale) * mod, beamZ))
-					LOUDWARP(BeamEndEntity2, Vector(beam2X, oy + (oy * unitBeingBuilt:GetFractionComplete() * uniformScale) * mod, beam2Z))
+					warpBeams(beamX, oy + (oy * percComplete * uniformScale) * mod, beamZ)
 					beamCounts = nil
 				end
 			end
