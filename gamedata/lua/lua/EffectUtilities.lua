@@ -168,7 +168,6 @@ function CreateBuildCubeThread( unitBeingBuilt, builder, OnBeingBuiltEffectsBag 
 	loudInsert(OnBeingBuiltEffectsBag, ghost)
 	
 	local struct = unitBeingBuilt:CreateProjectile('/effects/Entities/UEFBuildEffect/UEFBuildEffect_proj.bp')
-	LOUDWARP(struct, Vector(ox, (oy * completePerc), oz))
 	struct:SetMesh(structMesh)
 	struct:SetScale((1*uniformScale), (1 * uniformScale), (1*uniformScale))
 	loudInsert(OnBeingBuiltEffectsBag, struct)
