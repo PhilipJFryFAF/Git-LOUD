@@ -143,11 +143,13 @@ function CreateBuildCubeThread( unitBeingBuilt, builder, OnBeingBuiltEffectsBag 
 	local oz = pos[3]
 
 	-- Set up variables for the meshes.
-	local structMesh = bp.Display.BuildMeshBlueprint
+	local structMesh = bp.Display.MeshBlueprint
+	local structM
 	local ghostMesh = bp.Display.MeshBlueprintGhost
+	local ghostM
 	
 	-- Variables to hold the effects.
-	local struct, ghost
+	local struct, structM, ghost, ghostM
 	
 	-- Bring forward the table.insert.
 	local loudInsert = table.insert
@@ -156,26 +158,30 @@ function CreateBuildCubeThread( unitBeingBuilt, builder, OnBeingBuiltEffectsBag 
 	local uniformScale = bp.Display.UniformScale
     
 	-- Hide the unit being built
-    unitBeingBuilt:HideLandBones()
+	unitBeingBuilt:HideBone(0, true)
     unitBeingBuilt.BeingBuiltShowBoneTriggered = true
 
     local completePerc = GetFractionComplete(unitBeingBuilt)
 	local BeenDestroyed = BeenDestroyed
-	
-	local ghost = unitBeingBuilt:CreateProjectile('/effects/Entities/UEFBuildEffect/UEFBuildEffect_proj.bp')
-	ghost:SetMesh(ghostMesh)
-	ghost:SetScale((1*uniformScale)*1.05, (1*uniformScale)*1.05, (1*uniformScale)*1.05)
-	loudInsert(OnBeingBuiltEffectsBag, ghost)
-	
-	local struct = unitBeingBuilt:CreateProjectile('/effects/Entities/UEFBuildEffect/UEFBuildEffect_proj.bp')
-	struct:SetMesh(structMesh)
-	struct:SetScale((1*uniformScale), (1 * uniformScale), (1*uniformScale))
-	loudInsert(OnBeingBuiltEffectsBag, struct)
 
     while not BeenDestroyed(builder) and not BeenDestroyed(unitBeingBuilt) and completePerc < 1.0 do
 		completePerc = GetFractionComplete(unitBeingBuilt)
 		
-		struct:SetScale((1*uniformScale), ((1*completePerc) * uniformScale), (1*uniformScale))
+		-- Check we have the Ghost and Struct meshes in place.
+		if not ghostM then
+			ghostM = unitBeingBuilt:CreateProjectile('/effects/Entities/UEFBuildEffect/UEFBuildEffect_proj.bp')
+			ghostM:SetMesh(ghostMesh)
+			ghostM:SetScale((1*uniformScale)*1.05, (1*uniformScale)*1.05, (1*uniformScale)*1.05)
+			loudInsert(OnBeingBuiltEffectsBag, ghostM)
+			
+			-- Also create structM here, as it lives for the same time as ghostM anyway.
+			structM = unitBeingBuilt:CreateProjectile('/effects/Entities/UEFBuildEffect/UEFBuildEffect_proj.bp')
+			structM:SetMesh(structMesh)
+			structM:SetScale((1*uniformScale), (1 * uniformScale), (1*uniformScale))
+			loudInsert(OnBeingBuiltEffectsBag, structM)
+		else
+			structM:SetScale((1*uniformScale), ((1*completePerc) * uniformScale), (1*uniformScale))
+		end
 		
         WaitTicks(1)
     end
@@ -188,8 +194,8 @@ function CreateBuildCubeThread( unitBeingBuilt, builder, OnBeingBuiltEffectsBag 
 	end
 	
 	-- Cleanup leftovers.
-	cleanup(ghost)
-	cleanup(struct)
+	cleanup(ghostM)
+	cleanup(structM)
 	
 	-- Show the finished product.
 	unitBeingBuilt:ShowBone(0, true)

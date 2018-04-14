@@ -224,7 +224,7 @@ function ExtractBuildMeshBlueprint(bp)
 
 	local FactionName = bp.General.FactionName
 
-	if FactionName == 'Aeon' or FactionName == 'UEF' or FactionName == 'Cybran' or FactionName == 'Seraphim' then 
+	if FactionName == 'Aeon' or FactionName == 'Cybran' or FactionName == 'Seraphim' then 
 	
 		local meshid = bp.Display.MeshBlueprint
 		if not meshid then return end
@@ -263,8 +263,8 @@ function ExtractGhostMeshBlueprint(bp)
 			newGhostMesh = table.deepcopy(meshBP)
 			if newGhostMesh.LODs then
 				for i, lod in newGhostMesh.LODs do
-					lod.ShaderName = 'ShieldUEF'
-					--lod.AlbedoName = '/meshes/generic/cube03_albedo.dds'
+					lod.ShaderName = 'Phasing'
+					lod.SecondaryName = '/textures/effects/UEFBuildSpecular.dds'
 				end
 			end
 			newGhostMesh.BlueprintId = meshID..'_ghost'
