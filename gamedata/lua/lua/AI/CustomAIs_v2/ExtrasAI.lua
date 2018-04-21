@@ -1,7 +1,7 @@
 AI = {
 	Name = "AI Patch LOUD",
 	
-	Version = "4.99ZeldaNormal",
+	Version = "5.0Alpha",
 	
 	AIList = {
 		{

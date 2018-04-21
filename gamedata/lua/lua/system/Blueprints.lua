@@ -516,7 +516,7 @@ function ModBlueprints(all_blueprints)
 				end
 
 				if not (wep.BeamLifetime or wep.Label == 'DeathWeapon' or wep.Label == 'DeathImpact' or wep.WeaponCategory == 'Air Crash') and not wep.ProjectileLifetime and not wep.ProjectileLifetimeUsesMultiplier then
-					LOG("*AI DEBUG "..id.." "..bp.Description.." has no projectile lifetime for "..repr(wep.DisplayName).." Label "..repr(wep.Label))
+					--LOG("*AI DEBUG "..id.." "..bp.Description.." has no projectile lifetime for "..repr(wep.DisplayName).." Label "..repr(wep.Label))
 				end
 
 				if wep.TargetCheckInterval then
@@ -562,9 +562,19 @@ function ModBlueprints(all_blueprints)
 				bp.AI.GuardReturnRadius = capreturnradius
 			end
 
-			if bp.AI.GuardReturnRadius > 150 then
-				bp.AI.GuardReturnRadius = 150
+			if bp.AI.GuardReturnRadius > 80 then
+				bp.AI.GuardReturnRadius = 80
 			end
+		end
+		
+		if bp.AI.GuardScanRadius then
+		
+			if bp.AI.GuardScanRadius then
+			
+				bp.AI.GuardScanRadius = 80
+				
+			end
+			
 		end
 		
 		if bp.Economy.MaxBuildDistance and bp.Economy.MaxBuildDistance < 3 then

@@ -1418,8 +1418,8 @@ function GetTransports( platoon, aiBrain)
 
 		if transportplatoon then
 		
-			LOG("*AI DEBUG "..aiBrain.Nickname.." "..transportplatoon.BuilderName.." Returned To Pool ")
-			LOG("*AI DEBUG "..aiBrain.Nickname.." "..platoon.BuilderName.." Still needed "..neededTable.Large.." Lrg "..neededTable.Medium.." Med "..neededTable.Small.." Small slots")
+			--LOG("*AI DEBUG "..aiBrain.Nickname.." "..transportplatoon.BuilderName.." Returned To Pool ")
+			--LOG("*AI DEBUG "..aiBrain.Nickname.." "..platoon.BuilderName.." Still needed "..neededTable.Large.." Lrg "..neededTable.Medium.." Med "..neededTable.Small.." Small slots")
 			
 			ForkTo( ReturnTransportsToPool, aiBrain, GetPlatoonUnits(transportplatoon), true )
 			
@@ -1942,7 +1942,7 @@ function UseTransports( aiBrain, transports, location, UnitPlatoon, IsEngineer)
 					
 				else
 				
-					WARN("*AI DEBUG "..unit:GetAIBrain().Nickname.." FOUND TRANSPORT NOT ENOUGH SLOTS for "..unit:GetBlueprint().Description)
+					--WARN("*AI DEBUG "..unit:GetAIBrain().Nickname.." FOUND TRANSPORT NOT ENOUGH SLOTS for "..unit:GetBlueprint().Description)
 					
 					LOUDINSERT(leftoverUnits, unit)
 					
@@ -1950,7 +1950,7 @@ function UseTransports( aiBrain, transports, location, UnitPlatoon, IsEngineer)
 				
 			else
 			
-				LOG('*AI DEBUG: NO TRANSPORT FOUND')
+				--LOG('*AI DEBUG: NO TRANSPORT FOUND')
 				LOUDINSERT(leftoverUnits, unit)
 				
 			end
@@ -2325,7 +2325,7 @@ function UseTransports( aiBrain, transports, location, UnitPlatoon, IsEngineer)
 		
 				IssueClearCommands( GetPlatoonUnits(transports) )
 
-				if safePath and GetGameTimeSeconds() > 720 then 
+				if safePath and aiBrain.CycleTime > 720 then 
 			
 					local prevposition = GetPlatoonPosition(transports) or false
 		
@@ -2467,9 +2467,7 @@ function ReturnUnloadedUnitToPool( aiBrain, unit )
 		
 			WaitTicks(20)
 		end
-	
-		LOG("*AI DEBUG "..aiBrain.Nickname.." Unit unloaded now")
-	
+
 		returnpool:SetAIPlan('ReturnToBaseAI', aiBrain )
 		
 	end
@@ -2680,7 +2678,7 @@ function CheckTransportPool( aiBrain )
 
 	local TransportPool = aiBrain.TransportPool
 
-	-- get all transports except UEF gunship --
+	-- get all idle, fully built transports except UEF gunship --
 	local unitlist = aiBrain:GetListOfUnits(((categories.AIR * categories.TRANSPORTFOCUS - categories.uea0203)), true, true)
 	
 	for k,v in unitlist do
@@ -2700,7 +2698,7 @@ function CheckTransportPool( aiBrain )
 					continue
 				end
 				
-				if platoon.CreationTime and (GetGameTimeSeconds() - platoon.CreationTime) < 360 then
+				if platoon.CreationTime and (aiBrain.CycleTime - platoon.CreationTime) < 360 then
 					continue
 				end
 				

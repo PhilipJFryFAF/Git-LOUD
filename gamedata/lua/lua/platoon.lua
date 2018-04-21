@@ -443,6 +443,10 @@ Platoon = Class(moho.platoon_methods) {
 		if self.MovementLayer == 'Land' or self.MovementLayer == 'Amphibious' then
 		
 			local AIGetMarkersAroundLocation = import('ai/aiutilities.lua').AIGetMarkersAroundLocation
+			
+			local GetThreatAtPosition = moho.aibrain_methods.GetThreatAtPosition
+			local GetUnitsAroundPoint = moho.aibrain_methods.GetUnitsAroundPoint			
+			
 			local PlatoonGenerateSafePathToLOUD = self.PlatoonGenerateSafePathToLOUD
 		
 			local surthreat, airthreat
@@ -461,10 +465,15 @@ Platoon = Class(moho.platoon_methods) {
 			end
 			
 			-- a local function to get the real surface and air threat at a position based on known units rather than using the threat map
+			-- we also pull the value from the threat map so we can get an idea of how often it's a better value
+			-- I'm thinking of mixing the two values so that it will error on the side of caution
 			local GetRealThreatAtPosition = function( position, range )
 			
 				local s = 0 
 				local a = 0
+				
+				local sfake = GetThreatAtPosition( aiBrain, position, 0, true, 'AntiSurface' )
+				local afake = GetThreatAtPosition( aiBrain, position, 0, true, 'AntiAir' )
 			
 				local eunits = GetUnitsAroundPoint( aiBrain, categories.ALLUNITS - categories.FACTORY - categories.ECONOMIC - categories.SHIELD - categories.WALL , position, range,  'Enemy')
 			
@@ -485,22 +494,32 @@ Platoon = Class(moho.platoon_methods) {
 
 				end
 				
+				if sfake > 0 and sfake > s then
+				
+					s = (s + sfake) * .5
+					
+				end
+				
+				if afake > 0 and afake > a then
+				
+					a = (a + afake) * .5
+					
+				end
+				
 				return s, a
 			
 			end
 
 			-- a local function to find an alternate Drop point which satisfies both transports and self for threat and a path to the goal
-			local FindSafeDropZoneWithPath = function( self, transportplatoon, markerTypes, destination, threatMax, airthreatMax, threatType, layer)
+			local FindSafeDropZoneWithPath = function( self, transportplatoon, markerTypes, markerrange, destination, threatMax, airthreatMax, threatType, layer)
 
-				--LOG("*AI DEBUG FindSafeDropZoneWithPath")
-				
 				local markerlist = {}
 				local path, reason, pathlength
 	
-				-- locate the requested markers within 360 of the supplied location	
+				-- locate the requested markers within markerrange of the supplied location	
 				for _,v in markerTypes do
 				
-					markerlist = LOUDCAT(markerlist, AIGetMarkersAroundLocation(aiBrain, v, destination, 360) )
+					markerlist = LOUDCAT(markerlist, AIGetMarkersAroundLocation(aiBrain, v, destination, markerrange) )
 					
 				end
     
@@ -512,33 +531,37 @@ Platoon = Class(moho.platoon_methods) {
 				for _, v in markerlist do
 
 					-- test the real values for that position
-					local stest, atest = GetRealThreatAtPosition( v.Position, 90 )
-					
-					LOG("*AI DEBUG "..aiBrain.Nickname.." FINDSAFEDROP for "..repr(destination).." is testing "..repr(v.Position).." "..v.Name)
-					LOG("*AI DEBUG "..aiBrain.Nickname.." "..self.BuilderName.." Position "..repr(v.Position).." says Surface is "..stest.." vs "..threatMax.." and Air is "..atest.." vs "..airthreatMax )
-					LOG("*AI DEBUG "..aiBrain.Nickname.." "..self.BuilderName.." drop distance is "..repr( VDist3(destination, v.Position) ) )
-					
+					local stest, atest = GetRealThreatAtPosition( v.Position, 75 )
+		
 					if stest <= threatMax and atest <= airthreatMax then
-
+					
+						--LOG("*AI DEBUG "..aiBrain.Nickname.." FINDSAFEDROP for "..repr(destination).." is testing "..repr(v.Position).." "..v.Name)
+						--LOG("*AI DEBUG "..aiBrain.Nickname.." "..self.BuilderName.." Position "..repr(v.Position).." says Surface threat is "..stest.." vs "..threatMax.." and Air threat is "..atest.." vs "..airthreatMax )
+						--LOG("*AI DEBUG "..aiBrain.Nickname.." "..self.BuilderName.." drop distance is "..repr( VDist3(destination, v.Position) ) )
+			
 						-- can the self path safely from this marker to the final destination 
 						path, reason, pathlength = PlatoonGenerateSafePathToLOUD(aiBrain, self, layer, destination, v.Position, threatMax, 160 )
 	
 						-- can the transports reach that marker ?
 						if path then
 						
+							--LOG("*AI DEBUG "..aiBrain.Nickname.." "..self.BuilderName.." can path from "..repr(v.Position).." to "..repr(destination))
+							
 							path, reason, pathlength = PlatoonGenerateSafePathToLOUD( aiBrain, transportplatoon, 'Air', v.Position, self:GetPlatoonPosition(), airthreatMax, 240 )
 						
 							if path then
+							
+								--LOG("*AI DEBUG "..aiBrain.Nickname.." "..self.BuilderName.." finds SAFEDROP at "..repr(v.Position))
 							
 								return v.Position, v.Name
 							
 							end
 							
-							LOG("*AI DEBUG "..aiBrain.Nickname.." "..self.BuilderName.." NO safe AIR path to "..repr(destination).." from "..repr(v.Position) )
+							--LOG("*AI DEBUG "..aiBrain.Nickname.." "..self.BuilderName.." NO safe AIR path for transports to "..repr(destination).." from "..repr(self:GetPlatoonPosition() ))
 						
 						else
 						
-							LOG("*AI DEBUG "..aiBrain.Nickname.." "..self.BuilderName.." NO safe LAND path to "..repr(destination).." from "..repr(v.Position).." using "..layer)
+							--LOG("*AI DEBUG "..aiBrain.Nickname.." "..self.BuilderName.." NO safe LAND path to "..repr(destination).." from "..repr(v.Position).." using "..layer)
 							
 						end
 					
@@ -546,7 +569,7 @@ Platoon = Class(moho.platoon_methods) {
 					
 				end
 
-				LOG("*AI DEBUG "..aiBrain.Nickname.." "..self.BuilderName.." NO safe drop for "..repr(destination).." using "..layer)
+				--LOG("*AI DEBUG "..aiBrain.Nickname.." "..self.BuilderName.." NO safe drop for "..repr(destination).." using "..layer)
 				
 				return false, nil
 				
@@ -595,61 +618,43 @@ Platoon = Class(moho.platoon_methods) {
 
 			--LOG("*AI DEBUG "..aiBrain.Nickname.." assigns "..transportplatoon.BuilderName.." to "..self.BuilderName)
 	
+			-- ===================================
 			-- FIND A DROP ZONE FOR THE TRANSPORTS
+			-- ===================================
 			-- this is based upon the threat at the destination and the threat sensitivity of the self and the transports
-			local mythreat = 0
 			
 			-- a threat value for the transports based upon the number of transports
-			local airthreatMax = (LOUDGETN( GetPlatoonUnits(transportplatoon)) * 14.5 )
+			local airthreatMax = (LOUDGETN( GetPlatoonUnits(transportplatoon)) * 14 )
 			
 			-- this is the desired drop location
 			local transportLocation = LOUDCOPY(destination)
-			
-			-- get the real known threat at that location within 90 grids
-			surthreat, airtheat = GetRealThreatAtPosition( destination, 90 )
---[[			
-			airthreat = 0
-			surthreat = 0
 
-			local eunits = GetUnitsAroundPoint( aiBrain, categories.ALLUNITS - categories.FACTORY - categories.ECONOMIC - categories.SHIELD - categories.WALL , destination, 90,  'Enemy')
-			
-			if eunits then
-			
-				for _,u in eunits do
-				
-					if not u.Dead then
-					
-						local bp = GetBlueprint(u).Defense
-						
-						airthreat = airthreat + bp.AirThreatLevel
-						surthreat = surthreat + bp.SurfaceThreatLevel
-						
-					end
-					
-				end
-				
-			end
---]]			
 			-- our own threat
-			mythreat = self:CalculatePlatoonThreat('AntiSurface', categories.ALLUNITS)
+			local mythreat = self:CalculatePlatoonThreat('AntiSurface', categories.ALLUNITS)
 			
 			if not mythreat then 
-				mythreat = 0
+				mythreat = 1
 			end
 			
+			-- get the real known threat at the destination within 75 grids
+			surthreat, airtheat = GetRealThreatAtPosition( destination, 75 )
+
 			-- if the destination doesn't look good, use alternate or false
 			if surthreat > mythreat or airthreat > airthreatMax then
+			
+				-- we'll look for a drop zone at least half as close as we already are
+				local markerrange = VDist3( self:GetPlatoonPosition(), destination ) * .5
 			
 				transportLocation = false
 
 				-- If destination is too hot -- locate the nearest movement marker that is safe
 				if self.MovementLayer == 'Amphibious' then
 				
-					transportLocation = FindSafeDropZoneWithPath( self, transportplatoon, {'Amphibious Path Node','Land Path Node','Transport Marker'}, destination, mythreat, airthreatMax, 'AntiSurface', self.MovementLayer)
+					transportLocation = FindSafeDropZoneWithPath( self, transportplatoon, {'Amphibious Path Node','Land Path Node','Transport Marker'}, markerrange, destination, mythreat, airthreatMax, 'AntiSurface', self.MovementLayer)
 					
 				else
 				
-					transportLocation = FindSafeDropZoneWithPath( self, transportplatoon, {'Land Path Node','Transport Marker'}, destination, mythreat, airthreatMax, 'AntiSurface', self.MovementLayer)
+					transportLocation = FindSafeDropZoneWithPath( self, transportplatoon, {'Land Path Node','Transport Marker'}, markerrange, destination, mythreat, airthreatMax, 'AntiSurface', self.MovementLayer)
 					
 				end
 			
@@ -660,7 +665,7 @@ Platoon = Class(moho.platoon_methods) {
 				
 				if PlatoonExists(aiBrain,transportplatoon) then
 				
-					LOG("*AI DEBUG "..aiBrain.Nickname.." cannot find safe transport position to "..repr(destination).." aborting transport")
+					LOG("*AI DEBUG "..aiBrain.Nickname.." "..self.BuilderName.." cannot find safe transport position to "..repr(destination).." aborting transport")
 					
 					ForkTo( ReturnTransportsToPool, aiBrain, GetPlatoonUnits(transportplatoon), true)
 					
@@ -744,7 +749,7 @@ Platoon = Class(moho.platoon_methods) {
 					-- if no path then fail otherwise use it
 					if not path and destination != nil then
 				
-						LOG("*AI DEBUG "..aiBrain.Nickname.." "..self.BuilderName.." transport failed and/or no path to destination ")
+						--LOG("*AI DEBUG "..aiBrain.Nickname.." "..self.BuilderName.." transport failed and/or no path to destination ")
 					
 						return false
 				
@@ -778,7 +783,7 @@ Platoon = Class(moho.platoon_methods) {
 	--			NoStartNode - can't find a node near start position
 	--			NoEndNode - can't find a node near destination
 	--
-	--	I added a new feature to store bad paths so they are instantly reported as fails instead of recalculated - stored globally as part of ScenarioInfo
+	--	I added a feature to store bad paths so they are instantly reported as fails instead of recalculated - stored globally as part of ScenarioInfo
 	PlatoonGenerateSafePathToLOUD = function( aiBrain, platoon, platoonLayer, start, destination, threatallowed, MaxMarkerDist)
 
 		local GetUnitsAroundPoint = moho.aibrain_methods.GetUnitsAroundPoint
@@ -847,7 +852,7 @@ Platoon = Class(moho.platoon_methods) {
 				
 			else
 			
-				LOG("*AI DEBUG "..aiBrain.Nickname.." "..repr(platoon.BuilderName).." Generate Safe Path "..platoonLayer.." had a bad start "..repr(destination))
+				LOG("*AI DEBUG "..aiBrain.Nickname.." "..repr(platoon.BuilderName).." Generate Safe Path "..platoonLayer.." had a bad start "..repr(start))
 				return {destination}, 'Direct', 9999
 			end
 			
@@ -1487,7 +1492,7 @@ Platoon = Class(moho.platoon_methods) {
 				-- try to use transports --
 				if (self.MovementLayer == 'Land' or self.MovementLayer == 'Amphibious') and not experimental then
 				
-					usedTransports = self:SendPlatoonWithTransportsLOUD( aiBrain, transportLocation, 8, false )
+					usedTransports = self:SendPlatoonWithTransportsLOUD( aiBrain, transportLocation, 4, false )
 					
 				end
 				
@@ -2983,7 +2988,7 @@ Platoon = Class(moho.platoon_methods) {
 					
 				else
 				
-					LOG("*AI DEBUG "..aiBrain.Nickname.." GUARDPOINTAIR "..self.BuilderName.." finds no point")
+					--LOG("*AI DEBUG "..aiBrain.Nickname.." GUARDPOINTAIR "..self.BuilderName.." finds no point")
 					
 					return self:SetAIPlan('ReturnToBaseAI',aiBrain)
 					
@@ -3572,7 +3577,7 @@ Platoon = Class(moho.platoon_methods) {
 				-- Use transports for amphib units if far or path not successful
 				if self.MovementLayer == 'Amphibious' and (not path or VDist3( position, marker ) > 900) then
 				
-					usedTransports = self:SendPlatoonWithTransportsLOUD( aiBrain, marker, 8, false )
+					usedTransports = self:SendPlatoonWithTransportsLOUD( aiBrain, marker, 4, false )
 					
 				end
 
@@ -5172,7 +5177,8 @@ Platoon = Class(moho.platoon_methods) {
 		-- we'll take a copy of this table so that we can modify it for rotations without altering the source
         local baseTmpl = table.deepcopy( baseTmplFile[(cons.BaseTemplate or 'BaseTemplates')][factionIndex] )
 		
-        eng.NeedGuard = self.PlatoonData.NeedGuard or false
+		-- This value is deprecated 
+        --eng.NeedGuard = self.PlatoonData.NeedGuard or false
 		
 		eng.EngineerBuildQueue = {} 	-- clear the engineers build queue		
 
@@ -5637,7 +5643,7 @@ Platoon = Class(moho.platoon_methods) {
 
 			else
 			
-				WARN("*AI DEBUG "..aiBrain.Nickname.." Eng "..eng.Sync.id.." "..repr(self.BuilderName).." unable to build anything in EBAI - RTB")
+				--WARN("*AI DEBUG "..aiBrain.Nickname.." Eng "..eng.Sync.id.." "..repr(self.BuilderName).." unable to build anything in EBAI - RTB")
 				
 				eng.EngineerBuildQueue = {}
 				eng.failedbuilds = eng.failedbuilds + 1
@@ -6389,7 +6395,11 @@ Platoon = Class(moho.platoon_methods) {
 										WaitTicks(2)
 
 										break
+										
+									else
 									
+										WaitTicks(12)
+										
 									end
 								
 								end
@@ -7036,14 +7046,8 @@ Platoon = Class(moho.platoon_methods) {
 					if ((not path and reason == 'NoPath') or bNeedTransports) then
 					
 						bNeedTransports = true
-						usedTransports = self:SendPlatoonWithTransportsLOUD( aiBrain, targetLocation, 15, false )
-				
-					-- use if available at 350 but use short waiting period
-					-- REPLACE 350 with PLATOON DATA - TRANSPORT DISTANCE BREAKPOINT
-					elseif (not bNeedTransports) and pos and targetdistance > 350 then
-					
-						usedTransports = self:SendPlatoonWithTransportsLOUD( aiBrain, targetLocation, 1, false )
-						
+						usedTransports = self:SendPlatoonWithTransportsLOUD( aiBrain, targetLocation, 8, false )
+
 					end
 					
 				end
@@ -7085,9 +7089,7 @@ Platoon = Class(moho.platoon_methods) {
 			-- re-check HiPri target selection
 			-- check if Platoon becomes depleted
 			while PlatoonExists(aiBrain, self) and platpos and VDist2Sq( platpos[1],platpos[3], targetLocation[1],targetLocation[3] ) > ( 35*35 ) do
-			
-				--LOG("*AI DEBUG "..aiBrain.Nickname.." "..self.BuilderName.." LandForceAI in travel loop")
-				
+
 				WaitTicks(90)
 				
 				platpos = LOUDCOPY(GetPlatoonPosition(self))
@@ -7191,7 +7193,7 @@ Platoon = Class(moho.platoon_methods) {
 				
 			end
 			
-			WaitTicks(90)
+			WaitTicks(50)
 			
 		end
 		
@@ -7545,11 +7547,7 @@ Platoon = Class(moho.platoon_methods) {
 		
 				if (not path and reason == 'NoPath') then
 					
-					usedTransports = self:SendPlatoonWithTransportsLOUD( aiBrain, targetLocation, 15, true )
-			
-				elseif VDist3( pos, targetLocation ) > 500 then
-					
-					usedTransports = self:SendPlatoonWithTransportsLOUD( aiBrain, targetLocation, 1, true )
+					usedTransports = self:SendPlatoonWithTransportsLOUD( aiBrain, targetLocation, 5, true )
 
 				end
 
@@ -7579,12 +7577,12 @@ Platoon = Class(moho.platoon_methods) {
 			local stuckcount = 0
 			local nocmdactive
 			
-			local calltransport = 4	-- call for transport on first pass --
+			local calltransport = 3	-- call for transport on first pass --
 			
             -- Move to target location and check self along the way -- try to call for transport if distant
 			while PlatoonExists(aiBrain, self) and pos and VDist2Sq( pos[1],pos[3], targetLocation[1],targetLocation[3] ) > ( 45*45 ) do
 				
-				WaitTicks(100)
+				WaitTicks(90)
 				
 				pos = GetPlatoonPosition(self)				
 
@@ -7671,8 +7669,8 @@ Platoon = Class(moho.platoon_methods) {
 				if (not experimentalunit) and pos and VDist2Sq( pos[1],pos[3], targetLocation[1],targetLocation[3] ) > ( 500*500 ) then
 				
 					-- if calltransport counter is 4 check for transport and reset the counter
-					-- thru this mechanism we only call for tranport every 5th loop (50 seconds)
-					if calltransport > 3 then
+					-- thru this mechanism we only call for tranport every 3rd loop (27 seconds)
+					if calltransport > 2 then
 						
 						usedTransports = self:SendPlatoonWithTransportsLOUD( aiBrain, targetLocation, 1, true )
 						calltransport = 0
